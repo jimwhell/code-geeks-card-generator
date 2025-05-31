@@ -4,20 +4,31 @@ import bcrypt from "bcrypt";
 import { Session } from "../models/session.model";
 import { QueryResult } from "pg";
 import { signJWT, verifyJWT } from "../utils/jwt.utils";
-import logger from "../utils/logger";
-import { findAdmin } from "./admin.service";
+import log from "../utils/logger";
+import { findAdminByID } from "./admin.service";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
+import { Admin } from "../models/admin.model";
 
 dotenv.config();
 
-export async function createSession(admin_id: string): Promise<Session> {
-  const session: QueryResult<Session> = await pool.query(
-    "INSERT INTO sessions (admin_id) VALUES($1) RETURNING *",
-    [admin_id]
-  );
-  console.log("Session: ", session.rows[0]);
-  return session.rows[0];
+export async function createSession(admin_id: string): Promise<Session | null> {
+  try {
+    const session: QueryResult<Session> = await pool.query(
+      "INSERT INTO sessions (admin_id) VALUES($1) RETURNING *",
+      [admin_id]
+    );
+
+    if (session.rows.length === 0) {
+      log.error("Failed to create session for admin");
+      return null;
+    }
+
+    return session.rows[0];
+  } catch (error) {
+    log.error("Error creating session: ", error);
+    throw new Error("Server error");
+  }
 }
 
 export async function validatePassword({
@@ -27,122 +38,160 @@ export async function validatePassword({
   email: string;
   password: string;
 }) {
-  console.log("Email: ", email);
-  console.log("Password: ", password);
+  try {
+    const matchResult = await pool.query(
+      "SELECT * FROM admin WHERE email = $1",
+      [email]
+    );
 
-  const matchResult = await pool.query("SELECT * FROM admin WHERE email = $1", [
-    email,
-  ]);
+    console.log(matchResult.rows);
 
-  if (matchResult.rows.length === 0) {
-    return false;
+    if (matchResult.rows.length === 0) {
+      log.info("No admin found with an email of: ", email);
+      return null;
+    }
+
+    //retrieve the hash of the matched record
+    const matchedResultHash: string = matchResult.rows[0].password_hash;
+
+    if (!matchedResultHash) {
+      log.error("Failed to retrieve password hash");
+      return null;
+    }
+
+    //compare hash from db to the inputted hash
+    const isValid: boolean = await bcrypt.compare(password, matchedResultHash);
+
+    if (!isValid) {
+      log.info("Invalid password");
+      return null;
+    }
+
+    return {
+      admin_id: matchResult.rows[0].admin_id,
+      email: matchResult.rows[0].email,
+    };
+  } catch (error) {
+    log.error("Error in validating password: ", error);
+    throw new Error("Server error");
   }
-
-  //retrieve the hash of the matched record
-  const matchedResultHash: string = matchResult.rows[0].password_hash;
-
-  const isValid: boolean = await bcrypt.compare(password, matchedResultHash);
-
-  console.log("Is comparison valid: ", isValid);
-
-  if (!isValid) {
-    return false;
-  }
-
-  return {
-    admin_id: matchResult.rows[0].admin_id,
-    email: matchResult.rows[0].email,
-  };
 }
 
-export async function findSessions(query: string): Promise<Session[] | false> {
-  const adminId = query;
-  const sessions = await pool.query(
-    "SELECT * FROM sessions where admin_id = $1 AND is_valid = true",
-    [adminId]
-  );
+export async function findSessions(query: string): Promise<Session[] | null> {
+  try {
+    const adminId: string = query;
 
-  if (sessions.rows.length === 0) {
-    return false;
+    if (!adminId) {
+      log.info("Admin ID not found");
+      return null;
+    }
+
+    const sessions: QueryResult<Session> = await pool.query(
+      "SELECT * FROM sessions where admin_id = $1 AND is_valid = true",
+      [adminId]
+    );
+
+    if (sessions.rows.length === 0) {
+      log.info("No sessions found for admin");
+      return null;
+    }
+
+    return sessions.rows;
+  } catch (error) {
+    log.error("Error in retrieving sessions: ", error);
+    throw new Error("Server error");
   }
-
-  return sessions.rows;
 }
 
-export async function findValidSession(sessionId: string) {
-  const session = await pool.query(
-    "SELECT * FROM sessions where session_id = $1 AND is_valid = true",
-    [sessionId]
-  );
+export async function findValidSession(
+  sessionId: string
+): Promise<Session | null> {
+  try {
+    //query for a valid session that matches the given session ID
+    const session: QueryResult<Session> = await pool.query(
+      "SELECT * FROM sessions where session_id = $1 AND is_valid = true",
+      [sessionId]
+    );
 
-  if (!session || session.rows.length === 0) {
-    return false;
+    if (!session || session.rows.length === 0) {
+      log.info(
+        "No valid session found for request with session ID of: ",
+        sessionId
+      );
+      return null;
+    }
+
+    return session.rows[0];
+  } catch (error) {
+    log.error("Error in retrieving valid sessions for admin: ", error);
+    throw new Error("Server error");
   }
-
-  return session.rows[0];
 }
 
 export async function updateSession(
   query: string,
   update: boolean
-): Promise<Session | boolean> {
-  console.log("Query: ", query);
-  console.log("Update: ", update);
+): Promise<Session | null> {
+  try {
+    const updateResult = await pool.query(
+      "UPDATE sessions SET is_valid = $1 WHERE session_id = $2 RETURNING *",
+      [update, query]
+    );
 
-  const updateResult = await pool.query(
-    "UPDATE sessions SET is_valid = $1 WHERE session_id = $2",
-    [update, query]
-  );
+    if (updateResult.rows.length === 0) {
+      log.info("Failed to update sessions");
+      return null;
+    }
 
-  if (updateResult.rows.length === 0) {
-    return false;
+    return updateResult.rows[0];
+  } catch (error) {
+    log.error("Error in updating session status: ", error);
+    throw new Error("Server error");
   }
-
-  return updateResult.rows[0];
 }
 
 export async function reIssueAccessToken({
   refreshToken,
 }: {
   refreshToken: string;
-}): Promise<string | false> {
+}): Promise<string | null> {
   //verify if refresh token is valid
   const verifyResult = verifyJWT(refreshToken);
 
   if (!verifyResult) {
-    logger.error("Error verifying refresh token");
-    return false;
+    log.info("Error verifying refresh token");
+    return null;
   }
 
+  //fetch decoded data from verification result
   const { decoded } = verifyResult;
 
   if (!decoded || !decoded.session) {
-    logger.error("Invalid session");
-    return false;
+    log.info("Invalid session");
+    return null;
   }
 
-  console.log("Decoded session ID:", decoded.session);
+  const sessionId: string = decoded.session;
 
   const session: QueryResult<Session> = await pool.query(
     "SELECT * FROM sessions WHERE session_id = $1",
-    [decoded.session]
+    [sessionId]
   );
 
-  console.log("Query result: ", session.rows[0]);
-  console.log("Query result: ", session.rows.length);
-
   if (session.rows.length === 0 || !session.rows[0].is_valid) {
-    logger.error("Session is invalid or not found for this refresh token");
-    return false;
+    log.error("Session is invalid or not found for this refresh token");
+    return null;
   }
 
-  const adminId = session.rows[0].admin_id;
+  const adminId: string = session.rows[0].admin_id;
 
-  const admin = await findAdmin(adminId);
+  const admin: Omit<Admin, "password_hash"> | null = await findAdminByID(
+    adminId
+  );
 
-  if (!admin) {
-    logger.error("Admin with refresh token not found.");
-    return false;
+  if (admin === null) {
+    log.info(`Admin with ID of ${adminId} not found.`);
+    return null;
   }
 
   //create new access token
@@ -152,8 +201,8 @@ export async function reIssueAccessToken({
   );
 
   if (!accessToken) {
-    logger.error("Error creating new access token");
-    return false;
+    log.error("Error creating new access token");
+    return null;
   }
 
   return accessToken;
