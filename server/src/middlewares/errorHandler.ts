@@ -8,10 +8,9 @@ const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  logger.info(err.stack);
   res.status(500).json({
     status: 500,
-    message: "Something went wrong.",
+    message: "Internal server error",
     error: err.message,
   });
 };
