@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import {
   createSession,
   findSessions,
@@ -10,74 +10,127 @@ import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import { admin } from "googleapis/build/src/apis/admin";
 import { Session } from "../models/session.model";
+import log from "../utils/logger";
 
 dotenv.config();
 
 const accessTokenTTL = process.env.ACCESS_TOKEN_TTL;
 const refreshTokenTTL = process.env.REFRESH_TOKEN_TTL;
 
-export async function createAdminSession(req: Request, res: Response) {
+export async function createAdminSession(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   //validate input credentials
-  console.log("Email: ", req.body.email);
-  console.log("Password: ", req.body.password);
 
-  const admin = await validatePassword(req.body);
+  try {
+    const admin = await validatePassword(req.body);
 
-  if (!admin) {
-    res.status(401).send("Invalid email or password");
-    return;
+    if (!admin) {
+      res.status(401).json({ message: "Invalid email or password" });
+      return;
+    }
+
+    //create a session
+    const adminId: string = admin.admin_id;
+
+    if (!adminId) {
+      res.status(404).json({ message: "Admin id not found." });
+      return;
+    }
+
+    const session: Session | null = await createSession(adminId);
+
+    if (session === null) {
+      res.status(400).json({ message: "Failed to create session." });
+      return;
+    }
+
+    //create an access token
+    //and store admin details and session id in token
+    const accessToken: string | undefined = signJWT(
+      { ...admin, session: session.session_id },
+      { expiresIn: accessTokenTTL } as jwt.SignOptions //15 minutes
+    );
+
+    if (!accessToken) {
+      log.error("Failed to create access token");
+      res.status(500).json({ message: "Server error" });
+    }
+
+    //create a refresh token
+    //and store admin details and session id in token
+    const refreshToken: string | undefined = signJWT(
+      { ...admin, session: session.session_id },
+      { expiresIn: refreshTokenTTL } as jwt.SignOptions //1 year
+    );
+
+    if (!refreshToken) {
+      log.error("Failed to create refresh token");
+      res.status(500).json({ message: "Server error" });
+    }
+
+    res.send({ accessToken, refreshToken });
+  } catch (error) {
+    next(error);
   }
-
-  //create a session
-  const adminId: string = admin.admin_id;
-
-  if (!adminId) {
-    res.status(404).send("Admin id not found.");
-    return;
-  }
-
-  const session: Session = await createSession(adminId);
-
-  //create an access token
-  //and store admin details and session id in token
-  const accessToken = signJWT(
-    { ...admin, session: session.session_id },
-    { expiresIn: accessTokenTTL } as jwt.SignOptions //15 minutes
-  );
-
-  //create a refresh token
-  const refreshToken = signJWT(
-    { ...admin, session: session.session_id },
-    { expiresIn: refreshTokenTTL } as jwt.SignOptions //1 year
-  );
-
-  res.send({ accessToken, refreshToken });
 }
 
-export async function getAdminSessions(req: Request, res: Response) {
-  const adminId = res.locals.admin.admin_id;
+export async function getAdminSessions(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const adminId: string = res.locals.admin.admin_id;
 
-  const sessions = await findSessions(adminId);
-  console.log("Sessions from controller: ", sessions);
+    if (!adminId) {
+      res.status(400).json({ message: "Admin ID not found" });
+      return;
+    }
 
-  if (!sessions) {
-    res.status(404).send("No sessions found for admin");
-    return;
+    const sessions: Session[] | null = await findSessions(adminId);
+
+    if (sessions === null) {
+      res.status(404).send("No sessions found for admin.");
+      return;
+    }
+    res.status(200).json(sessions);
+  } catch (error) {
+    next(error);
   }
-  res.status(200).send(sessions);
 }
 
-export async function deleteAdminSession(req: Request, res: Response) {
-  const sessionId = res.locals.admin.session;
+export async function deleteAdminSession(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const sessionId: string = res.locals.admin.session;
 
-  if (!sessionId) {
-    res.status(401).send("Missing session ID.");
+    if (!sessionId) {
+      res.status(400).json({ message: "Missing session ID." });
+      return;
+    }
+
+    //invalidate the admin's current session
+    const sessionUpdateResult: null | Session = await updateSession(
+      sessionId,
+      false
+    );
+
+    if (sessionUpdateResult === null) {
+      res.status(500).json({ message: "Failed to invalidate session." });
+      return;
+    }
+
+    res.status(200).send({
+      accessToken: null,
+      refreshToken: null,
+    });
+  } catch (error) {
+    next(error);
   }
-
-  await updateSession(sessionId, false);
-
-  res.status(200).send({
-    accessToken: null,
-    refreshToken: null,
-  });
 }
