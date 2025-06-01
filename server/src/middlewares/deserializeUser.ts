@@ -1,9 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { verifyJWT } from "../utils/jwt.utils";
-import {
-  findValidSession,
-  reIssueAccessToken,
-} from "../services/sessions.service";
+import { findValidSession, reIssueAccessToken } from "../models/session.model";
 import log from "../utils/logger";
 
 const deserializeUser = async (
@@ -14,7 +11,7 @@ const deserializeUser = async (
   const authorizationHeader: string | undefined = req.headers.authorization;
   if (!authorizationHeader) {
     log.info("No authorization header found");
-    res.status(401).send("Unauthorized access");
+    res.status(403).send("Unauthorized access");
     return;
   }
 
@@ -45,6 +42,7 @@ const deserializeUser = async (
 
     //a null result means that the current decoded data from the refresh token
     //holds a session that is invalid
+
     if (newAccessToken === null) {
       res.status(401).send("Session revoked. Authentication required.");
       return;

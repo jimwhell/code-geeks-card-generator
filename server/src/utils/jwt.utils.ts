@@ -7,16 +7,17 @@ dotenv.config();
 const privateKey: string | undefined = process.env.PRIVATE_KEY;
 const publicKey: string | undefined = process.env.PUBLIC_KEY;
 
-// console.log("Private key: ", privateKey);
-// console.log("Public key: ", publicKey);
-
-export function signJWT(object: Object, options?: jwt.SignOptions) {
+export function signJWT(
+  object: Object,
+  options?: jwt.SignOptions
+): string | undefined {
   if (privateKey) {
     return jwt.sign(object, privateKey, {
       ...(options && options),
       algorithm: "RS256", //allow to use public and private keys
     });
   }
+  throw new Error("Private key not found");
 }
 
 export function verifyJWT(token: string) {
@@ -41,4 +42,5 @@ export function verifyJWT(token: string) {
       };
     }
   }
+  throw new Error("Public key not found");
 }

@@ -2,11 +2,8 @@ import express, { Request, Response } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import logger from "./utils/logger";
-import pool from "./config/db";
-import sessionsRoutes from "../src/routes/session.routes";
-import membersRoutes from "../src/routes/member.routes";
 import errorHandler from "./middlewares/errorHandler";
-import deserializeUser from "./middlewares/deserializeUser";
+import routes from "./routes";
 
 dotenv.config();
 
@@ -22,15 +19,8 @@ app.use(
   })
 );
 
-//routes
-app.use("/api/sessions", sessionsRoutes);
-app.use("/api/members", membersRoutes);
-
-//TEST POSTGRE CONNECTION
-// app.get("/", async (req: Request, res: Response) => {
-//   const result = await pool.query("SELECT current_database()");
-//   res.send(`The database name is: ${result.rows[0].current_database}`);
-// });
+//route registration
+routes(app);
 
 //error handling middleware
 app.use(errorHandler);

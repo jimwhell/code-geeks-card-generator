@@ -4,13 +4,14 @@ import {
   findSessions,
   updateSession,
   validatePassword,
-} from "../services/sessions.service";
+} from "../models/session.model";
 import { signJWT } from "../utils/jwt.utils";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 import { admin } from "googleapis/build/src/apis/admin";
-import { Session } from "../models/session.model";
+import { Session } from "../types/session.types";
 import log from "../utils/logger";
+import { loginAdminInput } from "../schemas/session.schema";
 
 dotenv.config();
 
@@ -18,12 +19,11 @@ const accessTokenTTL = process.env.ACCESS_TOKEN_TTL;
 const refreshTokenTTL = process.env.REFRESH_TOKEN_TTL;
 
 export async function createAdminSession(
-  req: Request,
+  req: Request<{}, {}, loginAdminInput["body"]>,
   res: Response,
   next: NextFunction
 ) {
   //validate input credentials
-
   try {
     const admin = await validatePassword(req.body);
 
@@ -33,7 +33,7 @@ export async function createAdminSession(
     }
 
     //create a session
-    const adminId: string = admin.admin_id;
+    const adminId = admin.admin_id;
 
     if (!adminId) {
       res.status(404).json({ message: "Admin id not found." });
@@ -43,8 +43,7 @@ export async function createAdminSession(
     const session: Session | null = await createSession(adminId);
 
     if (session === null) {
-      res.status(400).json({ message: "Failed to create session." });
-      return;
+      throw new Error("Failed to create session");
     }
 
     //create an access token
@@ -55,8 +54,7 @@ export async function createAdminSession(
     );
 
     if (!accessToken) {
-      log.error("Failed to create access token");
-      res.status(500).json({ message: "Server error" });
+      throw new Error("Failed to create access token");
     }
 
     //create a refresh token
@@ -67,12 +65,12 @@ export async function createAdminSession(
     );
 
     if (!refreshToken) {
-      log.error("Failed to create refresh token");
-      res.status(500).json({ message: "Server error" });
+      throw new Error("Failed to create refresh token");
     }
 
     res.send({ accessToken, refreshToken });
   } catch (error) {
+    log.error("Server error in creating a new session");
     next(error);
   }
 }
@@ -122,8 +120,7 @@ export async function deleteAdminSession(
     );
 
     if (sessionUpdateResult === null) {
-      res.status(500).json({ message: "Failed to invalidate session." });
-      return;
+      throw new Error("Failed to invalidate session");
     }
 
     res.status(200).send({

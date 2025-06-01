@@ -1,11 +1,11 @@
 import { NextFunction, Request, Response } from "express";
-import { Admin } from "../models/admin.model";
+import { Admin } from "../types/admin.types";
 
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
   const admin: Omit<Admin, "password_hash"> = res.locals.admin;
 
-  if (!admin) {
-    res.status(403);
+  if (!admin || admin === null) {
+    res.status(403).send("Unauthorized access");
     return;
   }
 
