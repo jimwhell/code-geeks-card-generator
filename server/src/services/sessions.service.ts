@@ -173,17 +173,14 @@ export async function reIssueAccessToken({
 
   const sessionId: string = decoded.session;
 
-  const session: QueryResult<Session> = await pool.query(
-    "SELECT * FROM sessions WHERE session_id = $1",
-    [sessionId]
-  );
+  const session: Session | null = await findValidSession(sessionId);
 
-  if (session.rows.length === 0 || !session.rows[0].is_valid) {
-    log.error("Session is invalid or not found for this refresh token");
+  if (session === null) {
+    log.info("Session is invalid or not found for this refresh token");
     return null;
   }
 
-  const adminId: string = session.rows[0].admin_id;
+  const adminId: string = session.admin_id;
 
   const admin: Omit<Admin, "password_hash"> | null = await findAdminByID(
     adminId
@@ -196,7 +193,7 @@ export async function reIssueAccessToken({
 
   //create new access token
   const accessToken = signJWT(
-    { ...admin, session: session.rows[0].session_id },
+    { ...admin, session: session.session_id },
     { expiresIn: process.env.ACCESS_TOKEN_TTL } as jwt.SignOptions //15 minutes
   );
 

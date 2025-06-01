@@ -3,7 +3,8 @@ import dotenv from "dotenv";
 import cors from "cors";
 import logger from "./utils/logger";
 import pool from "./config/db";
-import sessionRoutes from "../src/routes/session.routes";
+import sessionsRoutes from "../src/routes/session.routes";
+import membersRoutes from "../src/routes/member.routes";
 import errorHandler from "./middlewares/errorHandler";
 import deserializeUser from "./middlewares/deserializeUser";
 
@@ -22,7 +23,8 @@ app.use(
 );
 
 //routes
-app.use("/api/sessions", sessionRoutes);
+app.use("/api/sessions", sessionsRoutes);
+app.use("/api/members", membersRoutes);
 
 //TEST POSTGRE CONNECTION
 // app.get("/", async (req: Request, res: Response) => {
