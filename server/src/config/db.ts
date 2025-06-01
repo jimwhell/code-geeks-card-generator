@@ -6,12 +6,20 @@ dotenv.config();
 
 const { Pool } = pkg;
 
+console.log(process.env.PGUSER);
+console.log(process.env.PGHOST);
+console.log(process.env.PGDATABASE);
+console.log(process.env.PGPASSWORD);
+
 const pool: pkg.Pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB,
-  password: process.env.DB_PASSWORD,
+  user: process.env.PGUSER,
+  host: process.env.PGHOST,
+  database: process.env.PGDATABASE,
+  password: process.env.PGPASSWORD,
   port: Number(process.env.DB_PORT),
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 pool.on("connect", () => {
