@@ -39,14 +39,14 @@ const deserializeUser = async (
     return;
   }
 
-  // console.log("Decoded: ", decoded);
-
   //if access token is expired, verify refreshToken then create a new one.
   if (expired && refreshToken && typeof refreshToken === "string") {
     const newAccessToken = await reIssueAccessToken({ refreshToken });
 
+    //a null result means that the current decoded data from the refresh token
+    //holds a session that is invalid
     if (newAccessToken === null) {
-      res.status(401).send("Invalid session");
+      res.status(401).send("Session revoked. Authentication required.");
       return;
     }
 
@@ -65,15 +65,11 @@ const deserializeUser = async (
     //include admin details to res.locals
     res.locals.admin = result.decoded;
     next();
-  }
-
-  if (decoded === null) {
-    res.status(401).send("Unauthorized access.");
     return;
   }
 
   //extract session id from access token
-  const sessionId: string = decoded.session;
+  const sessionId: string = decoded!.session;
 
   //find a valid session that matches the ID of the current session
   const session = await findValidSession(sessionId);
