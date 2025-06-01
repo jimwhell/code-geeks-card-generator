@@ -39,7 +39,7 @@ const deserializeUser = async (
     return;
   }
 
-  console.log("Decoded: ", decoded);
+  // console.log("Decoded: ", decoded);
 
   //if access token is expired, verify refreshToken then create a new one.
   if (expired && refreshToken && typeof refreshToken === "string") {
